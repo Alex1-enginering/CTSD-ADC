@@ -14,7 +14,8 @@ sd_ovrs     = fs/fsymb;   % ADC oversampling rate
 diff_bias1  = +0.01;
 diff_bias2  = -0.01;
 cmp_bias    = -0.2;
-Vref        =  2.5; 
+Vref        =  1.25; 
+Vpwr        =  3.0;
 noise_sigma =  0.02; 
 % simulation time
 sim_time    = 0.1e-3;     % simulation time
@@ -45,27 +46,35 @@ adc_input_r = resample(adc_input, 1, analog_ovrs);
 %%% ADC analog part
 dac_out     = zeros(1, length(adc_input)/analog_ovrs);
 noise       = noise_sigma * randn(3, length(t));
-dac         = 0;
-integrator1 = 0;
-integrator2 = 0;
-
+dac         = zeros(1, length(adc_input));
+integrator1 = zeros(1, length(adc_input));
+integrator2 = zeros(1, length(adc_input));
 
 % filter coefficients
-a1 = 2;
-b1 = 0.5;
-a2 = 1;
-b2 = 50;
+a1 = 0.05; 
+b1 = 1;   
+a2 = 0.01; 
+b2 = 1;
 
-for i=1:length(adc_input)
-    err1        = adc_input(i)- b1*dac + diff_bias1;    % error calculation 
-    integrator1 = integrator1 + a1*err1 + noise(1, i);  % integrator 
+for i=2:length(adc_input)
+    err1           = adc_input(i) - b1*dac(i-1) + diff_bias1;       % error calculation 
+    integrator1(i) = integrator1(i-1) + a1*err1 + noise(1, i);      % integrator 
     
-    err2        = integrator1 - b2*dac + diff_bias2;    % error calculation 
-    integrator2 = integrator2 + a2*err2 + noise(2, i);  % integrator
+    err2           = integrator1(i-1) - b2*dac(i-1) + diff_bias2;   % error calculation 
+    integrator2(i) = integrator2(i-1) + a2*err2     + noise(2, i);  % integrator
+    
+    if(abs(integrator1(i))>Vpwr)   % hard clipping
+        integrator1(i) = sign(integrator1(i))*Vpwr;
+    end
+    if(abs(integrator2(i))>Vpwr)   % hard clipping
+        integrator2(i) = sign(integrator2(i))*Vpwr;
+    end
     
     if(mod(i, analog_ovrs)==0)               % comparator and sampler
-        dac  = Vref*sign(integrator2 + cmp_bias + noise(3, i));
-        dac_out(i/analog_ovrs) = dac;    
+        dac(i)  = Vref*sign(integrator2(i) + cmp_bias + noise(3, i));
+        dac_out(i/analog_ovrs) = dac(i);
+    else
+        dac(i) = dac(i-1);
     end
 end
 
